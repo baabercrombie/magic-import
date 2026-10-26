@@ -1,0 +1,100 @@
+name: magic-import
+services:
+  magic-import:
+    image: ghcr.io/baabercrombie/magic-import:latest
+    container_name: magic-import
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "8088:8088"          # web page: http://YOUR-ZIMA-IP:8088
+    volumes:
+      - /DATA/AppData/magic-import/data:/data      # database + saved copies of emails
+    environment:
+      # ================================================================
+      #  FILL IN THE VALUES BELOW (keep the quotes).
+      #  ZimaOS web page: add a custom app, choose Import, paste this whole file.
+      #  Change settings later in that app's Settings screen.
+      # ================================================================
+
+      # ---- 1. The mailbox you forward school emails to ----
+      # For Gmail, IMAP_PASSWORD is a 16-letter "app password", not your normal password.
+      IMAP_HOST: "imap.gmail.com"
+      IMAP_PORT: "993"
+      IMAP_USERNAME: "your-new-address@gmail.com"
+      IMAP_PASSWORD: "abcd efgh ijkl mnop"
+
+      # Only emails FROM these addresses are read. Separate with commas.
+      # You can also allow a whole domain like "@yourfamily.com".
+      ALLOWED_SENDERS: "you@example.com, spouse@example.com"
+
+      # ---- 2. iCloud calendar ----
+      # Apple ID email, and an app-specific password made at https://account.apple.com
+      # (Sign-In and Security > App-Specific Passwords). Looks like abcd-efgh-ijkl-mnop.
+      ICLOUD_USERNAME: "you@icloud.com"
+      ICLOUD_APP_PASSWORD: "abcd-efgh-ijkl-mnop"
+      # The calendar's name exactly as it shows in the Calendar app.
+      # The Setup check page lists every name it can see if you are not sure.
+      ICLOUD_CALENDAR_NAME: "Family"
+
+      # ---- 3. AI ----
+      # The AI runs on your own graphics card (the "ollama" service at the bottom of this file).
+      # The model downloads by itself the first time the app starts (about 6 GB, takes a while).
+      AI_PROVIDER: "ollama"
+      AI_MODEL: "qwen3-vl:8b-instruct"
+      OLLAMA_URL: "http://ollama:11434"
+
+      # ---- 4. Your time zone ----
+      # Examples: America/New_York, America/Chicago, America/Denver, America/Los_Angeles
+      TIMEZONE: "America/Chicago"
+
+      # ================================================================
+      #  OPTIONAL SETTINGS (fine to leave as they are)
+      # ================================================================
+
+      # "true" = new events wait for you to click Approve on the web page.
+      # "false" = new events go straight onto the calendar.
+      # (You can also flip this any time with the button on the web page.)
+      REVIEW_MODE: "false"
+
+      # Password for the web page. Leave empty for no password.
+      # When set, your browser asks for a login: any username, this password.
+      UI_PASSWORD: ""
+
+      # Extra instructions for the AI, in plain English. Examples:
+      #   "Our kids are Emma (3rd grade, Mrs. Smith) and Jack (Kindergarten). Skip events for other grades."
+      #   "Don't add lunch menus or PTA meetings."
+      AI_EXTRA_INSTRUCTIONS: ""
+
+      # How often to check the mailbox, in seconds.
+      POLL_SECONDS: "120"
+
+      # How long an event is when the email gives a start time but no end time (minutes).
+      DEFAULT_EVENT_MINUTES: "60"
+
+      # How much text the local AI can look at once. Lower it (to 8192) if the
+      # graphics card runs out of memory on very long newsletters.
+      OLLAMA_NUM_CTX: "16384"
+
+      # Most scanned PDF pages the AI looks at per email (pages with real text don't count).
+      PDF_MAX_IMAGE_PAGES: "8"
+
+      # To use Anthropic's Claude in the cloud instead of the local AI, set
+      # AI_PROVIDER to "claude", AI_MODEL to "claude-opus-5-5", and put your key here.
+      ANTHROPIC_API_KEY: ""
+
+      # Mail folder to read. Leave as INBOX.
+      IMAP_FOLDER: "INBOX"
+
+  # The local AI engine. It uses your NVIDIA graphics card (RTX 3060).
+  ollama:
+    image: ollama/ollama:0.40.11
+    container_name: magic-import-ollama
+    restart: unless-stopped
+    runtime: nvidia
+    ipc: host
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "all"
+      OLLAMA_KEEP_ALIVE: "10m"
+    volumes:
+      - /DATA/AppData/magic-import/ollama:/root/.ollama   # downloaded AI models
