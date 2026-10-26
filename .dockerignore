@@ -1,0 +1,7 @@
+.git
+.github
+data
+ollama
+__pycache__
+*.md
+docker-compose.yml

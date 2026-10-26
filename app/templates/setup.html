@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Setup check</h1>
+<p class="muted">This page tests each connection right now. Settings are changed in docker-compose.yml, then restart the app.</p>
+
+<table class="list">
+  <tbody>
+  {% for name, ok, detail in checks %}
+    <tr>
+      <td>{{ "✅" if ok else "❌" }}</td>
+      <td><strong>{{ name }}</strong></td>
+      <td>{{ detail }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if calendar_names %}
+<div class="card">
+  <h3>Calendars this Apple ID can see</h3>
+  <p class="muted small">Copy one of these names exactly into ICLOUD_CALENDAR_NAME.</p>
+  <ul>{% for n in calendar_names %}<li><code>{{ n }}</code></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>Other settings</h3>
+  <dl class="meta">
+    <dt>AI</dt><dd>{{ config.AI_PROVIDER }} · {{ config.AI_MODEL }}{% if config.AI_PROVIDER == "ollama" %} · {{ config.OLLAMA_URL }}{% endif %}</dd>
+    <dt>Time zone</dt><dd>{{ config.TIMEZONE_NAME }}</dd>
+    <dt>Mail folder</dt><dd>{{ config.IMAP_FOLDER }}</dd>
+    <dt>Check every</dt><dd>{{ config.POLL_SECONDS }} seconds</dd>
+    <dt>Default length</dt><dd>{{ config.DEFAULT_EVENT_MINUTES }} minutes (when no end time is given)</dd>
+    <dt>Extra AI instructions</dt><dd>{{ config.AI_EXTRA_INSTRUCTIONS or "(none)" }}</dd>
+    <dt>Web page password</dt><dd>{{ "on" if config.UI_PASSWORD else "off" }}</dd>
+  </dl>
+</div>
+{% endblock %}

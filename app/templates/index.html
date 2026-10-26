@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block head %}{% if any_processing %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
+{% block content %}
+
+<section class="cards">
+  <div class="card">
+    <h3>How to use</h3>
+    {% if mail_address %}
+      <p>Forward school emails or PDFs to <strong>{{ mail_address }}</strong>.</p>
+    {% else %}
+      <p class="muted">The mailbox is not set up yet. See <a href="/setup">Setup check</a>.</p>
+    {% endif %}
+    <p class="muted small">
+      Calendar: <strong>{{ calendar_name or "not set" }}</strong><br>
+      AI: <strong>{{ ai_label }}</strong>{% if ai_status and ai_status != "ready" %} <span class="bad-text">({{ ai_status }})</span>{% endif %}<br>
+      Mail checked every {{ (poll_seconds / 60)|round(1) }} min.
+      {% if last_check %}Last check: {{ last_check|ts }}{% endif %}
+    </p>
+    {% if last_error %}<p class="bad-text small">Last mail check failed: {{ last_error }}</p>{% endif %}
+    {% if not (mailbox_ready and calendar_ready and ai_ready) %}
+      <p class="bad-text small">Some settings are missing. Open <a href="/setup">Setup check</a>.</p>
+    {% endif %}
+    <form method="post" action="/check-mail"><button class="btn">Check mail now</button></form>
+  </div>
+
+  <div class="card">
+    <h3>Review before adding</h3>
+    {% if review_mode %}
+      <p><span class="badge pending">ON</span> New events wait for you to approve them.</p>
+      <form method="post" action="/review-mode"><input type="hidden" name="enabled" value="0">
+        <button class="btn">Turn off (add automatically)</button></form>
+    {% else %}
+      <p><span class="badge created">OFF</span> New events go straight onto the calendar.</p>
+      <form method="post" action="/review-mode"><input type="hidden" name="enabled" value="1">
+        <button class="btn">Turn on (approve first)</button></form>
+    {% endif %}
+    {% if pending_total %}<p class="small"><strong>{{ pending_total }}</strong> event(s) waiting for approval.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Add from a file or text</h3>
+    <form method="post" action="/upload" enctype="multipart/form-data" class="stack">
+      <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.ics" required>
+      <input type="text" name="note" placeholder="Optional note, e.g. 'only for Emma's class'">
+      <button class="btn primary">Upload and read</button>
+    </form>
+    <details>
+      <summary>Paste text instead</summary>
+      <form method="post" action="/paste" class="stack">
+        <input type="text" name="title" placeholder="What is this? (optional)">
+        <textarea name="text" rows="6" placeholder="Paste the email or newsletter text here" required></textarea>
+        <button class="btn primary">Read text</button>
+      </form>
+    </details>
+  </div>
+</section>
+
+{% if upcoming %}
+<section>
+  <h2>Coming up (added by this app)</h2>
+  <table class="list">
+    <thead><tr><th>When</th><th>Event</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for ev in upcoming %}
+      <tr>
+        <td class="nowrap">{{ ev|when }}</td>
+        <td><a href="/imports/{{ ev.import_id }}">{{ ev.title }}</a></td>
+        <td><span class="badge {{ ev.status }}">{{ status_labels[ev.status] }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section>
+  <h2>Everything processed</h2>
+  {% if not imports %}
+    <p class="muted">Nothing yet. Forward an email or upload a file to get started.</p>
+  {% else %}
+  <table class="list">
+    <thead><tr><th>Received</th><th>From / subject</th><th>Status</th><th>Events</th></tr></thead>
+    <tbody>
+    {% for imp in imports %}
+      {% set c = counts.get(imp.id) %}
+      <tr>
+        <td class="nowrap">{{ imp.received_at|ts }}</td>
+        <td>
+          <a href="/imports/{{ imp.id }}"><strong>{{ imp.subject or "(no subject)" }}</strong></a><br>
+          <span class="muted small">{{ imp.from_addr }}</span>
+        </td>
+        <td><span class="badge {{ imp.status }}">{{ imp.status }}</span></td>
+        <td class="small">
+          {% if c %}
+            {% if c.created %}<span class="badge created">{{ c.created }} added</span>{% endif %}
+            {% if c.pending %}<span class="badge pending">{{ c.pending }} waiting</span>{% endif %}
+            {% if c.duplicate %}<span class="badge duplicate">{{ c.duplicate }} duplicate</span>{% endif %}
+            {% if c.failed %}<span class="badge failed">{{ c.failed }} failed</span>{% endif %}
+            {% if c.removed %}<span class="badge skipped">{{ c.removed }} removed</span>{% endif %}
+          {% elif imp.status == "done" %}
+            <span class="muted">no events found</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

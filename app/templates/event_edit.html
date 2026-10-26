@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/imports/{{ imp.id }}">← Back to {{ imp.subject or "import" }}</a></p>
+<h1>{% if ev %}Edit event{% else %}Add an event{% endif %}</h1>
+{% if ev and ev.status == "created" %}
+  <p class="muted">This event is on the calendar. Saving will update it there too.</p>
+{% endif %}
+
+<form method="post" action="{% if ev %}/events/{{ ev.id }}/edit{% else %}/imports/{{ imp.id }}/add{% endif %}" class="card stack edit-form">
+  <label>Title
+    <input type="text" name="title" value="{{ form.title }}" required>
+  </label>
+
+  <label class="check">
+    <input type="checkbox" name="all_day" value="1" id="all_day" {% if form.all_day %}checked{% endif %}>
+    All day
+  </label>
+
+  <div class="row">
+    <label>Start date <input type="date" name="start_date" value="{{ form.start_date }}" required></label>
+    <label class="time">Start time <input type="time" name="start_time" value="{{ form.start_time }}"></label>
+  </div>
+  <div class="row">
+    <label>End date <input type="date" name="end_date" value="{{ form.end_date }}"></label>
+    <label class="time">End time <input type="time" name="end_time" value="{{ form.end_time }}"></label>
+  </div>
+
+  <label>Location
+    <input type="text" name="location" value="{{ form.location }}">
+  </label>
+  <label>Notes
+    <textarea name="description" rows="4">{{ form.description }}</textarea>
+  </label>
+  <button class="btn primary">Save</button>
+</form>
+
+<script>
+  const box = document.getElementById("all_day");
+  function sync() {
+    document.querySelectorAll(".time").forEach(el => el.style.display = box.checked ? "none" : "");
+  }
+  box.addEventListener("change", sync);
+  sync();
+</script>
+{% endblock %}

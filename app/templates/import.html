@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ imp.subject or "Import" }} · Magic Import{% endblock %}
+{% block head %}{% if imp.status == "processing" %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block content %}
+
+<p><a href="/">← Back</a></p>
+<h1>{{ imp.subject or "(no subject)" }}</h1>
+
+<div class="card">
+  <dl class="meta">
+    <dt>From</dt><dd>{{ imp.from_addr }}</dd>
+    <dt>Received</dt><dd>{{ imp.received_at|ts }}</dd>
+    <dt>Processed</dt><dd>{{ imp.processed_at|ts or "not yet" }}</dd>
+    <dt>Status</dt><dd><span class="badge {{ imp.status }}">{{ imp.status }}</span>
+      {% if imp.status == "processing" %}<span class="muted small">(this page refreshes by itself)</span>{% endif %}</dd>
+    {% if imp.attachments %}<dt>Files</dt><dd>{{ imp.attachments|join(", ") }}</dd>{% endif %}
+    {% if imp.ai_summary %}<dt>AI summary</dt><dd>{{ imp.ai_summary }}</dd>{% endif %}
+  </dl>
+  {% if imp.error %}<p class="flash bad">{{ imp.error }}</p>{% endif %}
+
+  <div class="actions">
+    {% if events|selectattr("status", "equalto", "pending")|list %}
+      <form method="post" action="/imports/{{ imp.id }}/approve-all"><button class="btn primary">Add all waiting events</button></form>
+    {% endif %}
+    {% if events|selectattr("status", "in", ["created", "pending"])|list %}
+      <form method="post" action="/imports/{{ imp.id }}/undo"
+            onsubmit="return confirm('Remove every event from this email from the calendar?')">
+        <button class="btn danger">Undo everything from this email</button></form>
+    {% endif %}
+    {% if imp.status != "ignored" %}
+      <form method="post" action="/imports/{{ imp.id }}/reprocess"
+            onsubmit="return confirm('Have the AI read this again? Events already on the calendar are kept.')">
+        <button class="btn">Read again with AI</button></form>
+      <a class="btn" href="/imports/{{ imp.id }}/add">+ Add an event by hand</a>
+    {% endif %}
+  </div>
+</div>
+
+<h2>Events</h2>
+{% if not events %}
+  <p class="muted">{% if imp.status == "processing" %}Working on it…{% else %}No events.{% endif %}</p>
+{% endif %}
+{% for ev in events %}
+  <div class="event card status-{{ ev.status }}">
+    <div class="event-head">
+      <div>
+        <div class="event-title">{{ ev.title }}</div>
+        <div class="event-when">{{ ev|when }}</div>
+        {% if ev.location %}<div class="small">📍 {{ ev.location }}</div>{% endif %}
+      </div>
+      <span class="badge {{ ev.status }}">{{ status_labels[ev.status] }}</span>
+    </div>
+    {% if ev.description %}<p class="desc">{{ ev.description }}</p>{% endif %}
+    {% if ev.duplicate_of %}<p class="small muted">Matched existing event: {{ ev.duplicate_of }}</p>{% endif %}
+    {% if ev.error %}<p class="small bad-text">{{ ev.error }}</p>{% endif %}
+    <div class="actions">
+      {% if ev.status == "pending" %}
+        <form method="post" action="/events/{{ ev.id }}/approve"><button class="btn primary">Add to calendar</button></form>
+      {% elif ev.status in ["duplicate", "failed", "skipped", "deleted"] %}
+        <form method="post" action="/events/{{ ev.id }}/approve"><button class="btn">{{ {"failed": "Try again", "duplicate": "Add it anyway", "skipped": "Add to calendar", "deleted": "Put back on calendar"}[ev.status] }}</button></form>
+      {% endif %}
+      <a class="btn" href="/events/{{ ev.id }}/edit">Edit</a>
+      {% if ev.status == "created" %}
+        <form method="post" action="/events/{{ ev.id }}/remove"
+              onsubmit="return confirm('Delete this event from the calendar?')"><button class="btn danger">Remove from calendar</button></form>
+      {% elif ev.status in ["pending", "duplicate", "failed"] %}
+        <form method="post" action="/events/{{ ev.id }}/remove"><button class="btn">Skip</button></form>
+      {% endif %}
+    </div>
+  </div>
+{% endfor %}
+
+{% if imp.body_text %}
+<details class="card">
+  <summary>Original text</summary>
+  <pre class="original">{{ imp.body_text }}</pre>
+</details>
+{% endif %}
+
+<h2>History</h2>
+<table class="list">
+  <tbody>
+  {% for row in activity %}
+    <tr><td class="nowrap small">{{ row.ts|ts }}</td><td><span class="badge">{{ row.action }}</span></td><td>{{ row.detail }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
