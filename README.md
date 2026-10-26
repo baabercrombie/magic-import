@@ -16,6 +16,7 @@ Forward a school email, newsletter or PDF to one email address, and the events i
    - add an event the AI missed
    - upload a PDF or picture, or paste text, without emailing it
    - turn "Review before adding" on or off
+6. Optional: **Home Assistant** gets a notification with Approve / Skip buttons for each event, plus a dashboard card. See [homeassistant/README.md](homeassistant/README.md).
 
 Only emails sent **from** the addresses in `ALLOWED_SENDERS` are read. Anything else is listed as "ignored" and never touches the calendar.
 

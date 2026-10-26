@@ -58,6 +58,11 @@ DEFAULT_EVENT_MINUTES = max(5, _int("DEFAULT_EVENT_MINUTES", 60))
 
 # Web page
 UI_PASSWORD = os.environ.get("UI_PASSWORD", "").strip()
+# The address of this web page as other devices see it, e.g. http://192.168.1.50:8088
+APP_URL = os.environ.get("APP_URL", "").strip().rstrip("/")
+
+# Home Assistant: the app sends a message here each time it finishes reading an email
+HA_WEBHOOK_URL = os.environ.get("HA_WEBHOOK_URL", "").strip()
 
 # Storage
 DATA_DIR = os.environ.get("DATA_DIR", "/data").strip()

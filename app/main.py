@@ -9,12 +9,13 @@ from datetime import date, datetime
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ai, calendar_client, config, db, mailbox, processor
+from . import ai, calendar_client, config, db, mailbox, notify, processor
+from .display import fmt_when
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -47,24 +48,6 @@ templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
 
 # ---------- display helpers ----------
-
-def fmt_when(ev: dict) -> str:
-    try:
-        if ev["all_day"]:
-            start = date.fromisoformat(ev["start"])
-            end = date.fromisoformat(ev["end"] or ev["start"])
-            if end != start:
-                return f"{start:%a %b %-d} – {end:%a %b %-d, %Y} (all day)"
-            return f"{start:%a %b %-d, %Y} (all day)"
-        start = datetime.strptime(ev["start"], "%Y-%m-%dT%H:%M")
-        end = datetime.strptime(ev["end"], "%Y-%m-%dT%H:%M") if ev["end"] else None
-        text = f"{start:%a %b %-d, %Y · %-I:%M %p}"
-        if end:
-            text += f" – {end:%-I:%M %p}" if end.date() == start.date() else f" – {end:%a %b %-d %-I:%M %p}"
-        return text
-    except Exception:
-        return f"{ev.get('start')} – {ev.get('end')}"
-
 
 def fmt_ts(value: str | None) -> str:
     if not value:
@@ -356,3 +339,102 @@ def edit(event_id: int, title: str = Form(""), start_date: str = Form(""), end_d
         return redirect(f"/events/{event_id}/edit", err, error=True)
     where = " and on the calendar" if ev["status"] == "created" else ""
     return redirect(f"/imports/{ev['import_id']}", f"Saved{where}.")
+
+
+# ---------- API for Home Assistant and other tools (JSON) ----------
+
+def _api_result(err: str | None, event_id: int | None = None) -> JSONResponse:
+    body = {"ok": err is None}
+    if err:
+        body["error"] = err
+    if event_id is not None:
+        row = db.get_event(event_id)
+        body["event"] = notify.event_payload(row) if row else None
+    return JSONResponse(body, status_code=200 if err is None else 400)
+
+
+@app.get("/api/pending")
+def api_pending():
+    rows = db.query(
+        "SELECT e.*, i.subject FROM events e JOIN imports i ON i.id = e.import_id "
+        "WHERE e.status = 'pending' ORDER BY e.start LIMIT 25")
+    events = [{**notify.event_payload(row), "subject": row["subject"] or ""} for row in rows]
+    total = db.query_one("SELECT COUNT(*) AS n FROM events WHERE status = 'pending'")["n"]
+    return {"count": total, "review_mode": db.review_mode(), "events": events}
+
+
+@app.get("/api/imports/{import_id}")
+def api_import(import_id: int):
+    if not db.get_import(import_id):
+        raise HTTPException(404, "Not found")
+    return notify.import_payload(import_id)
+
+
+@app.post("/api/events/{event_id}/approve")
+def api_approve(event_id: int):
+    if not db.get_event(event_id):
+        raise HTTPException(404, "Not found")
+    return _api_result(processor.approve_event(event_id), event_id)
+
+
+@app.post("/api/events/{event_id}/skip")
+def api_skip(event_id: int):
+    """Waiting event: skip it. Event already on the calendar: remove it (undo)."""
+    if not db.get_event(event_id):
+        raise HTTPException(404, "Not found")
+    return _api_result(processor.remove_event(event_id), event_id)
+
+
+@app.post("/api/pending/approve-all")
+def api_approve_all():
+    errors = processor.approve_all_pending()
+    return _api_result("; ".join(errors) if errors else None)
+
+
+@app.post("/api/pending/skip-all")
+def api_skip_all():
+    processor.skip_all_pending()
+    return _api_result(None)
+
+
+@app.post("/api/review-mode/{state}")
+def api_review_mode(state: str):
+    on = state.lower() in ("on", "1", "true")
+    db.set_setting("review_mode", "1" if on else "0")
+    db.log("setting", f"Review mode {'ON' if on else 'OFF'} (from Home Assistant)")
+    return {"ok": True, "review_mode": on}
+
+
+# ---------- compact page for a Home Assistant dashboard (Webpage card) ----------
+
+@app.get("/ha")
+def ha_page(request: Request):
+    rows = db.query(
+        "SELECT e.*, i.subject FROM events e JOIN imports i ON i.id = e.import_id "
+        "WHERE e.status = 'pending' ORDER BY e.start")
+    recent = db.query(
+        "SELECT e.*, i.subject FROM events e JOIN imports i ON i.id = e.import_id "
+        "WHERE e.status = 'created' ORDER BY e.updated_at DESC LIMIT 5")
+    return render(request, "ha.html", pending=rows, recent=recent)
+
+
+@app.post("/ha/events/{event_id}/{action}")
+def ha_action(event_id: int, action: str):
+    if action == "approve":
+        err = processor.approve_event(event_id)
+    elif action in ("skip", "undo"):
+        err = processor.remove_event(event_id)
+    else:
+        raise HTTPException(404, "Not found")
+    return redirect("/ha", err or "", error=bool(err))
+
+
+@app.post("/ha/all/{action}")
+def ha_all(action: str):
+    if action == "approve":
+        errors = processor.approve_all_pending()
+        return redirect("/ha", "; ".join(errors), error=bool(errors))
+    if action == "skip":
+        processor.skip_all_pending()
+        return redirect("/ha")
+    raise HTTPException(404, "Not found")

@@ -1,0 +1,136 @@
+# =====================================================================
+#  Magic Import for Home Assistant
+#
+#  Gives you:
+#    - sensor.magic_import_waiting  (how many events wait for approval)
+#    - a phone notification for every new event, with Approve / Skip buttons
+#    - "Added to calendar" notifications with an Undo button (when review mode is off)
+#    - actions you can use on a dashboard (see dashboard_card.yaml)
+#
+#  Before using, replace these two things in this file:
+#    ZIMA_IP              -> your Zima's IP address, e.g. 192.168.1.50   (5 places)
+#    notify.YOUR_PHONE    -> your phone's notify action, e.g. notify.mobile_app_burkes_iphone
+#                            (Developer tools > Actions, type "notify.mobile_app" to see yours)
+# =====================================================================
+
+rest:
+  - resource: http://ZIMA_IP:8088/api/pending
+    scan_interval: 60
+    timeout: 20
+    sensor:
+      - name: "Magic Import waiting"
+        unique_id: magic_import_waiting
+        icon: mdi:calendar-import
+        unit_of_measurement: "events"
+        value_template: "{{ value_json.count }}"
+        json_attributes:
+          - events
+          - review_mode
+
+rest_command:
+  magic_import_approve:
+    url: "http://ZIMA_IP:8088/api/events/{{ event_id }}/approve"
+    method: post
+    timeout: 60
+  magic_import_skip:
+    url: "http://ZIMA_IP:8088/api/events/{{ event_id }}/skip"
+    method: post
+    timeout: 60
+  magic_import_approve_all:
+    url: "http://ZIMA_IP:8088/api/pending/approve-all"
+    method: post
+    timeout: 120
+  magic_import_skip_all:
+    url: "http://ZIMA_IP:8088/api/pending/skip-all"
+    method: post
+    timeout: 60
+
+automation:
+  # 1) The app finished reading an email -> notify the phone
+  - id: magic_import_email_read
+    alias: "Magic Import: email read"
+    mode: queued
+    triggers:
+      - trigger: webhook
+        webhook_id: magic_import_q8v3k2
+        allowed_methods: [POST]
+        local_only: true
+    actions:
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.magic_import_waiting
+
+      # An event waiting for approval -> Approve / Skip buttons
+      - repeat:
+          for_each: "{{ trigger.json.events | selectattr('status', 'eq', 'pending') | list }}"
+          sequence:
+            - action: notify.YOUR_PHONE
+              data:
+                title: "Add to calendar?"
+                message: >-
+                  {{ repeat.item.title }}
+                  {{ repeat.item.when }}{% if repeat.item.location %} · {{ repeat.item.location }}{% endif %}
+                data:
+                  tag: "magic-import-{{ repeat.item.id }}"
+                  group: "magic-import"
+                  actions:
+                    - action: "MAGIC_APPROVE_{{ repeat.item.id }}"
+                      title: "Approve"
+                    - action: "MAGIC_SKIP_{{ repeat.item.id }}"
+                      title: "Skip"
+
+      # Events that went straight onto the calendar -> one summary with Undo per event
+      - repeat:
+          for_each: "{{ trigger.json.events | selectattr('status', 'eq', 'created') | list }}"
+          sequence:
+            - action: notify.YOUR_PHONE
+              data:
+                title: "Added to calendar"
+                message: >-
+                  {{ repeat.item.title }}
+                  {{ repeat.item.when }}
+                data:
+                  tag: "magic-import-{{ repeat.item.id }}"
+                  group: "magic-import"
+                  actions:
+                    - action: "MAGIC_SKIP_{{ repeat.item.id }}"
+                      title: "Undo"
+
+      # The AI couldn't read the email
+      - if:
+          - condition: template
+            value_template: "{{ trigger.json.status == 'error' }}"
+        then:
+          - action: notify.YOUR_PHONE
+            data:
+              title: "Magic Import problem"
+              message: "Couldn't read \"{{ trigger.json.subject }}\": {{ trigger.json.error }}"
+
+  # 2) A button on one of those notifications was pressed
+  - id: magic_import_button_pressed
+    alias: "Magic Import: notification button"
+    mode: queued
+    triggers:
+      - trigger: event
+        event_type: mobile_app_notification_action
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.event.data.action is string and trigger.event.data.action.startswith('MAGIC_') }}"
+    actions:
+      - variables:
+          button: "{{ trigger.event.data.action }}"
+          event_id: "{{ button.split('_')[-1] }}"
+      - if:
+          - condition: template
+            value_template: "{{ button.startswith('MAGIC_APPROVE_') }}"
+        then:
+          - action: rest_command.magic_import_approve
+            data:
+              event_id: "{{ event_id }}"
+        else:
+          - action: rest_command.magic_import_skip
+            data:
+              event_id: "{{ event_id }}"
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.magic_import_waiting

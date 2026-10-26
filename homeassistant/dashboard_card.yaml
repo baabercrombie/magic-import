@@ -1,0 +1,40 @@
+# Magic Import dashboard card.
+# Dashboard > Edit > Add card > Manual, paste everything below this comment.
+# Replace ZIMA_IP with your Zima's IP address (1 place).
+type: vertical-stack
+cards:
+  - type: markdown
+    title: Magic Import
+    content: >-
+      {% set evs = state_attr('sensor.magic_import_waiting', 'events') or [] %}
+      {% if evs | length == 0 %}
+      Nothing waiting for approval.
+      {% else %}
+      **{{ states('sensor.magic_import_waiting') }} waiting for approval**
+
+      {% for e in evs %}
+      - **{{ e.title }}** · {{ e.when }}{% if e.location %} · {{ e.location }}{% endif %}
+      {% endfor %}
+      {% endif %}
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Approve all
+        icon: mdi:check-all
+        tap_action:
+          action: perform-action
+          perform_action: rest_command.magic_import_approve_all
+          confirmation:
+            text: Add every waiting event to the calendar?
+      - type: button
+        name: Skip all
+        icon: mdi:close-box-multiple
+        tap_action:
+          action: perform-action
+          perform_action: rest_command.magic_import_skip_all
+          confirmation:
+            text: Skip every waiting event?
+  # Approve or skip one event at a time (works when you're on your home network)
+  - type: iframe
+    url: http://ZIMA_IP:8088/ha
+    aspect_ratio: 120%

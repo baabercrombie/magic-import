@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="60">
+  <title>Magic Import</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { background: transparent; }
+    main { padding: 8px; }
+    .ha-item { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .ha-item:last-child { border-bottom: 0; }
+    .ha-item .actions { margin: 0; flex-shrink: 0; }
+    .ha-title { font-weight: 700; }
+    .ha-sub { font-size: .85rem; color: var(--muted); }
+    h3 { margin: 6px 0; }
+  </style>
+</head>
+<body>
+<main>
+  {% if err %}<div class="flash bad">{{ err }}</div>{% endif %}
+  <h3>Waiting for approval{% if pending %} ({{ pending|length }}){% endif %}</h3>
+  {% if not pending %}
+    <p class="muted">Nothing waiting. {% if not review_mode %}(Review mode is off, so events are added automatically.){% endif %}</p>
+  {% else %}
+    {% for ev in pending %}
+      <div class="ha-item">
+        <div>
+          <div class="ha-title">{{ ev.title }}</div>
+          <div class="ha-sub">{{ ev|when }}{% if ev.location %} · {{ ev.location }}{% endif %}</div>
+          <div class="ha-sub">from: {{ ev.subject }}</div>
+        </div>
+        <div class="actions">
+          <form method="post" action="/ha/events/{{ ev.id }}/approve"><button class="btn primary">Approve</button></form>
+          <form method="post" action="/ha/events/{{ ev.id }}/skip"><button class="btn">Skip</button></form>
+        </div>
+      </div>
+    {% endfor %}
+    {% if pending|length > 1 %}
+    <div class="actions">
+      <form method="post" action="/ha/all/approve"><button class="btn primary">Approve all</button></form>
+      <form method="post" action="/ha/all/skip"><button class="btn">Skip all</button></form>
+    </div>
+    {% endif %}
+  {% endif %}
+
+  {% if recent %}
+  <h3 style="margin-top:16px">Recently added</h3>
+  {% for ev in recent %}
+    <div class="ha-item">
+      <div>
+        <div class="ha-title">{{ ev.title }}</div>
+        <div class="ha-sub">{{ ev|when }}</div>
+      </div>
+      <div class="actions">
+        <form method="post" action="/ha/events/{{ ev.id }}/undo" onsubmit="return confirm('Remove from the calendar?')"><button class="btn danger">Undo</button></form>
+      </div>
+    </div>
+  {% endfor %}
+  {% endif %}
+</main>
+</body>
+</html>

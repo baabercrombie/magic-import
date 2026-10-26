@@ -6,7 +6,7 @@ import re
 import threading
 from datetime import datetime, timedelta
 
-from . import ai, calendar_client, config, db
+from . import ai, calendar_client, config, db, notify
 from .mailparse import Attachment, parse_email
 
 # One thing at a time, so two emails can't create the same event at the same moment
@@ -111,6 +111,7 @@ def run_extraction(import_id: int, subject: str, from_addr: str, body_text: str,
         except Exception as exc:
             db.update_import(import_id, status="error", error=f"AI step failed: {exc}", processed_at=db.now_iso())
             db.log("error", f"AI step failed: {exc}", import_id)
+            notify.send_import_update(import_id)
             return
 
         db.update_import(import_id, ai_summary=result["summary"])
@@ -144,6 +145,7 @@ def run_extraction(import_id: int, subject: str, from_addr: str, body_text: str,
         if problems:
             error += " (events were left for review instead of being created)"
         db.update_import(import_id, status="done", processed_at=db.now_iso(), error=error)
+    notify.send_import_update(import_id)
 
 
 def _matches_any(ev: dict, rows: list[dict]) -> dict | None:
@@ -363,3 +365,21 @@ def reprocess(import_id: int) -> str | None:
     else:
         run_extraction(import_id, imp["subject"], imp["from_addr"], imp["body_text"] or "", [])
     return None
+
+
+def approve_all_pending() -> list[str]:
+    """Approve every waiting event, from every email."""
+    errors = []
+    for row in db.query("SELECT * FROM events WHERE status = 'pending' ORDER BY start"):
+        err = approve_event(row["id"])
+        if err:
+            errors.append(f'{row["title"]}: {err}')
+    return errors
+
+
+def skip_all_pending() -> int:
+    """Skip every waiting event, from every email. Returns how many were skipped."""
+    rows = db.query("SELECT * FROM events WHERE status = 'pending'")
+    for row in rows:
+        remove_event(row["id"])
+    return len(rows)
